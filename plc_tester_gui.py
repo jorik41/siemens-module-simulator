@@ -11,22 +11,70 @@ from typing import Any, Dict, List, Union, Callable
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-import snap7
-from snap7.util import (
-    get_bool,
-    get_dint,
-    get_dword,
-    get_int,
-    get_real,
-    get_word,
-    set_bool,
-    set_dint,
-    set_dword,
-    set_int,
-    set_real,
-    set_word,
-)
-from snap7.snap7types import areas
+try:
+    import snap7
+    from snap7.util import (
+        get_bool,
+        get_dint,
+        get_dword,
+        get_int,
+        get_real,
+        get_word,
+        set_bool,
+        set_dint,
+        set_dword,
+        set_int,
+        set_real,
+        set_word,
+    )
+    from snap7.snap7types import areas
+except Exception:  # pragma: no cover - optional dependency
+    snap7 = None
+
+    def _missing_snap7(*_args: object, **_kwargs: object) -> None:
+        """Helper used when the snap7 package is not available."""
+        raise RuntimeError(
+            "The 'snap7' package is required for PLC communication. "
+            "Install it with 'pip install python-snap7'."
+        )
+
+    def get_bool(*args: object, **kwargs: object) -> bool:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def get_dint(*args: object, **kwargs: object) -> int:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def get_dword(*args: object, **kwargs: object) -> int:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def get_int(*args: object, **kwargs: object) -> int:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def get_real(*args: object, **kwargs: object) -> float:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def get_word(*args: object, **kwargs: object) -> int:  # type: ignore[misc]
+        return _missing_snap7()
+
+    def set_bool(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    def set_dint(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    def set_dword(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    def set_int(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    def set_real(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    def set_word(*args: object, **kwargs: object) -> None:  # type: ignore[misc]
+        _missing_snap7()
+
+    areas: Dict[str, int] = {}
 
 
 @dataclass
@@ -581,24 +629,33 @@ class PLCConnection:
     """Wrapper around snap7 client."""
 
     def __init__(self) -> None:
-        self.client = snap7.client.Client()
+        if snap7 is None:
+            self.client = None
+        else:
+            self.client = snap7.client.Client()
         self.connected = False
 
     def connect(self, ip: str, rack: int = 0, slot: int = 1) -> None:
+        if self.client is None:
+            _missing_snap7()
         self.client.connect(ip, rack, slot)
         self.connected = True
 
     def disconnect(self) -> None:
-        if self.connected:
+        if self.connected and self.client is not None:
             self.client.disconnect()
             self.connected = False
 
     def read(self, db: int, start: int, size: int, area: str = "DB") -> bytes:
+        if self.client is None:
+            _missing_snap7()
         if area == "M":
             return self.client.read_area(areas["MK"], 0, start, size)
         return self.client.db_read(db, start, size)
 
     def write(self, db: int, start: int, data: bytes, area: str = "DB") -> None:
+        if self.client is None:
+            _missing_snap7()
         if area == "M":
             self.client.write_area(areas["MK"], 0, start, data)
         else:
