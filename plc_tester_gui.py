@@ -4,6 +4,7 @@ A simple GUI to create and run PLC test plans using Snap7.
 
 import json
 import time
+import re
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Union
 
@@ -347,6 +348,20 @@ class PlanJsonEditor(tk.Toplevel):
         '  "delay_ms": 0\n}'
     )
 
+    KEYWORDS = [
+        "modules",
+        "tests",
+        "steps",
+        "name",
+        "description",
+        "db_number",
+        "start",
+        "data_type",
+        "write",
+        "expected",
+        "delay_ms",
+    ]
+
     def __init__(self, gui: "PLCTestGUI") -> None:
         super().__init__(gui.root)
         self.gui = gui
@@ -354,7 +369,10 @@ class PlanJsonEditor(tk.Toplevel):
 
         self.text = tk.Text(self, width=80, height=25)
         self.text.pack(fill=tk.BOTH, expand=True)
-        self.text.bind("<KeyRelease>", lambda e: self._validate())
+        self.text.bind("<KeyPress>", self._handle_keypress)
+        self.text.bind("<KeyRelease>", self._on_key_release)
+        self.text.bind("<Tab>", self._autocomplete)
+        self.suggestions: List[str] = []
 
         btn_frm = ttk.Frame(self)
         btn_frm.pack(fill=tk.X)
@@ -384,26 +402,80 @@ class PlanJsonEditor(tk.Toplevel):
 
     def _insert_module(self) -> None:
         self.text.insert(tk.INSERT, self.MODULE_TEMPLATE)
-        self._validate()
+        self._on_key_release(None)
 
     def _insert_test(self) -> None:
         self.text.insert(tk.INSERT, self.TEST_TEMPLATE)
-        self._validate()
+        self._on_key_release(None)
 
     def _insert_step(self) -> None:
         self.text.insert(tk.INSERT, self.STEP_TEMPLATE)
-        self._validate()
+        self._on_key_release(None)
 
-    def _validate(self) -> None:
+    def _on_key_release(self, event: tk.Event | None) -> None:
+        if self._validate():
+            self._update_suggestions()
+
+    def _validate(self) -> bool:
         raw = self.text.get("1.0", tk.END)
         try:
             json.loads(raw)
         except Exception as exc:  # pragma: no cover - user input
             self.status_var.set(f"JSON error: {exc}")
             self.text.config(background="#ffecec")
-            return
+            return False
         self.status_var.set("JSON valid")
         self.text.config(background="white")
+        return True
+
+    def _current_prefix(self) -> str:
+        line_start = self.text.index("insert linestart")
+        prior = self.text.get(line_start, "insert")
+        match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)$", prior)
+        return match.group(1) if match else ""
+
+    def _update_suggestions(self) -> None:
+        prefix = self._current_prefix()
+        if prefix:
+            matches = [k for k in self.KEYWORDS if k.startswith(prefix) and k != prefix]
+            self.suggestions = matches
+            if matches:
+                self.status_var.set(
+                    f"JSON valid - Suggestions: {', '.join(matches[:5])}"
+                )
+            else:
+                self.status_var.set("JSON valid")
+        else:
+            self.suggestions = []
+            self.status_var.set("JSON valid")
+
+    def _autocomplete(self, event: tk.Event) -> str:
+        if self.suggestions:
+            prefix = self._current_prefix()
+            suggestion = self.suggestions[0]
+            if prefix:
+                self.text.delete(f"insert -{len(prefix)}c", "insert")
+            self.text.insert("insert", suggestion)
+            self.suggestions = []
+            self._update_suggestions()
+            return "break"
+        # default tab inserts 4 spaces
+        self.text.insert("insert", "    ")
+        return "break"
+
+    def _handle_keypress(self, event: tk.Event) -> str | None:
+        pairs = {"{": "}", "[": "]", '"': '"'}
+        if event.char in pairs:
+            self.text.insert("insert", event.char + pairs[event.char])
+            self.text.mark_set("insert", "insert -1c")
+            return "break"
+        if event.keysym == "BackSpace":
+            prev = self.text.get("insert -1c")
+            nextc = self.text.get("insert")
+            if (prev, nextc) in [("{", "}"), ("[", "]"), ('"', '"')]:
+                self.text.delete("insert -1c", "insert +1c")
+                return "break"
+        return None
 
     def _run(self) -> None:
         raw = self.text.get("1.0", tk.END)
