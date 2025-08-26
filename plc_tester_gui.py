@@ -282,13 +282,16 @@ class PLCTestGUI:
 
     def remove_module(self) -> None:
         module = self.current_module()
-        if module:
-            self.plan.modules.remove(module)
-            self.refresh_modules()
+        if not module:
+            messagebox.showwarning("No selection", "Select a module to remove.")
+            return
+        self.plan.modules.remove(module)
+        self.refresh_modules()
 
     def add_test(self) -> None:
         module = self.current_module()
         if not module:
+            messagebox.showwarning("No module", "Select a module first.")
             return
         name = simpledialog.askstring("Test", "Test name:")
         if name:
@@ -298,13 +301,16 @@ class PLCTestGUI:
     def remove_test(self) -> None:
         module = self.current_module()
         test = self.current_test()
-        if module and test:
-            module.tests.remove(test)
-            self.refresh_tests()
+        if not (module and test):
+            messagebox.showwarning("No selection", "Select a test to remove.")
+            return
+        module.tests.remove(test)
+        self.refresh_tests()
 
     def add_step(self) -> None:
         test = self.current_test()
         if not test:
+            messagebox.showwarning("No test", "Select a test first.")
             return
         editor = StepEditor(self.root)
         self.root.wait_window(editor)
@@ -318,6 +324,7 @@ class PLCTestGUI:
         test = self.current_test()
         idx = self.step_list.curselection()
         if not test or not idx:
+            messagebox.showwarning("No selection", "Select a step to edit.")
             return
         step = test.steps[idx[0]]
         editor = StepEditor(self.root, step=step, title="Edit Step")
@@ -331,9 +338,11 @@ class PLCTestGUI:
     def remove_step(self) -> None:
         test = self.current_test()
         idx = self.step_list.curselection()
-        if test and idx:
-            del test.steps[idx[0]]
-            self.refresh_steps()
+        if not (test and idx):
+            messagebox.showwarning("No selection", "Select a step to remove.")
+            return
+        del test.steps[idx[0]]
+        self.refresh_steps()
 
     def suggest_next_step(self, step: TestStep) -> None:
         """Provide simple suggestions for likely next steps."""
@@ -388,8 +397,10 @@ class PLCTestGUI:
 
     def run_selected_test(self) -> None:
         test = self.current_test()
-        if test:
-            self._run_test(test)
+        if not test:
+            messagebox.showwarning("No test", "Select a test to run.")
+            return
+        self._run_test(test)
 
     def _run_test(self, test: TestCase) -> None:
         self.log_msg(f"  Test: {test.name}")
