@@ -9,6 +9,7 @@ This repository contains a simple Python GUI application for creating and execut
 - Expect specific values and verify them step-by-step
 - Save and load test plans as JSON files
 - Integrated step editor with validation and smart suggestions for next actions
+- Edit existing steps through a dedicated editor
 - Detailed failure log identifying which step failed and why
 
 ## Usage
