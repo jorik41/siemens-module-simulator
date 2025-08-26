@@ -5,7 +5,7 @@ This repository contains a simple Python GUI application for creating and execut
 ## Features
 
 - Define modules, tests, and individual steps in a friendly GUI
-- Write to and read from PLC data blocks
+- Write to and read from PLC data blocks and M memory
 - Expect specific values and verify them step-by-step
 - Execute simple delays between actions to build timer-based sequences
 - Write and read multiple address/value pairs within a single step
@@ -48,4 +48,5 @@ file dialogs.
 - Provide matching data types separated by commas (e.g. `INT,REAL`). Use `byte.bit` for BOOL addresses.
 - Enter corresponding write or expected values separated by commas (e.g. `5,3.14`).
 - An optional delay (milliseconds) can be specified to pause before executing the step's operations.
+- Choose the memory area (DB or M); DB number is ignored when using M.
 
