@@ -26,6 +26,7 @@ from snap7.util import (
     set_real,
     set_word,
 )
+from snap7.snap7types import areas
 
 
 @dataclass
@@ -38,6 +39,7 @@ class TestStep:
     write: Any | List[Any] | None = None
     expected: Any | List[Any] | None = None
     delay_ms: int | None = None
+    area: str = "DB"
 
 
 @dataclass
@@ -134,11 +136,11 @@ def _run_test(conn: "PLCConnection", test: TestCase) -> None:
                 byte_str, bit_str = str(start).split(".")
                 byte_idx, bit_idx = int(byte_str), int(bit_str)
                 if w is not None:
-                    cur = bytearray(conn.read(step.db_number, byte_idx, 1))
+                    cur = bytearray(conn.read(step.db_number, byte_idx, 1, step.area))
                     set_bool(cur, 0, bit_idx, bool(w))
-                    conn.write(step.db_number, byte_idx, bytes(cur))
+                    conn.write(step.db_number, byte_idx, bytes(cur), step.area)
                 if e is not None:
-                    data = conn.read(step.db_number, byte_idx, 1)
+                    data = conn.read(step.db_number, byte_idx, 1, step.area)
                     val = get_bool(data, 0, bit_idx)
                     if val != bool(e):
                         raise AssertionError(
@@ -147,9 +149,9 @@ def _run_test(conn: "PLCConnection", test: TestCase) -> None:
             elif dtype == "BYTE":
                 addr = int(start)
                 if w is not None:
-                    conn.write(step.db_number, addr, bytes([int(w)]))
+                    conn.write(step.db_number, addr, bytes([int(w)]), step.area)
                 if e is not None:
-                    data = conn.read(step.db_number, addr, 1)
+                    data = conn.read(step.db_number, addr, 1, step.area)
                     val = data[0]
                     if val != int(e):
                         raise AssertionError(
@@ -161,9 +163,9 @@ def _run_test(conn: "PLCConnection", test: TestCase) -> None:
                 if w is not None:
                     buf = bytearray(size)
                     set_func(buf, 0, w)
-                    conn.write(step.db_number, addr, bytes(buf))
+                    conn.write(step.db_number, addr, bytes(buf), step.area)
                 if e is not None:
-                    data = conn.read(step.db_number, addr, size)
+                    data = conn.read(step.db_number, addr, size, step.area)
                     val = get_func(data, 0)
                     ok = abs(val - float(e)) < 1e-6 if dtype == "REAL" else val == e
                     if not ok:
@@ -195,10 +197,12 @@ class StepEditor(tk.Toplevel):
         self.write_var = tk.StringVar()
         self.expected_var = tk.StringVar()
         self.delay_var = tk.StringVar()
+        self.area_var = tk.StringVar(value="DB")
 
         if step:
             self.description_var.set(step.description)
             self.db_var.set(str(step.db_number))
+            self.area_var.set(step.area)
             if isinstance(step.start, list):
                 self.start_var.set(",".join(str(s) for s in step.start))
             else:
@@ -226,34 +230,39 @@ class StepEditor(tk.Toplevel):
         ttk.Label(frm, text="Description").grid(row=0, column=0, sticky="w")
         ttk.Entry(frm, textvariable=self.description_var, width=40).grid(row=0, column=1)
 
-        ttk.Label(frm, text="DB number").grid(row=1, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=1, column=1, sticky="w")
+        ttk.Label(frm, text="Area").grid(row=1, column=0, sticky="w")
+        ttk.OptionMenu(frm, self.area_var, self.area_var.get(), "DB", "M").grid(
+            row=1, column=1, sticky="w"
+        )
 
-        ttk.Label(frm, text="Start address(es)").grid(row=2, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.start_var, width=20).grid(row=2, column=1, sticky="w")
+        ttk.Label(frm, text="DB number").grid(row=2, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=2, column=1, sticky="w")
 
-        ttk.Label(frm, text="Data type(s)").grid(row=3, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.type_var, width=20).grid(row=3, column=1, sticky="w")
+        ttk.Label(frm, text="Start address(es)").grid(row=3, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.start_var, width=20).grid(row=3, column=1, sticky="w")
 
-        ttk.Label(frm, text="Write values (comma)").grid(row=4, column=0, sticky="w")
+        ttk.Label(frm, text="Data type(s)").grid(row=4, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.type_var, width=20).grid(row=4, column=1, sticky="w")
+
+        ttk.Label(frm, text="Write values (comma)").grid(row=5, column=0, sticky="w")
         ttk.Entry(frm, textvariable=self.write_var, width=30).grid(
-            row=4, column=1, sticky="w"
-        )
-
-        ttk.Label(frm, text="Expected values (comma)").grid(
-            row=5, column=0, sticky="w"
-        )
-        ttk.Entry(frm, textvariable=self.expected_var, width=30).grid(
             row=5, column=1, sticky="w"
         )
 
-        ttk.Label(frm, text="Delay ms").grid(row=6, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.delay_var, width=10).grid(
+        ttk.Label(frm, text="Expected values (comma)").grid(
+            row=6, column=0, sticky="w"
+        )
+        ttk.Entry(frm, textvariable=self.expected_var, width=30).grid(
             row=6, column=1, sticky="w"
         )
 
+        ttk.Label(frm, text="Delay ms").grid(row=7, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.delay_var, width=10).grid(
+            row=7, column=1, sticky="w"
+        )
+
         btn_frm = ttk.Frame(frm)
-        btn_frm.grid(row=7, column=0, columnspan=2, pady=(10, 0))
+        btn_frm.grid(row=8, column=0, columnspan=2, pady=(10, 0))
         ttk.Button(btn_frm, text="OK", command=self._on_ok).grid(row=0, column=0, padx=5)
         ttk.Button(btn_frm, text="Cancel", command=self.destroy).grid(row=0, column=1, padx=5)
 
@@ -267,7 +276,13 @@ class StepEditor(tk.Toplevel):
             desc = self.description_var.get().strip()
             if not desc:
                 raise ValueError("Description required")
-            db = int(self.db_var.get())
+            area = self.area_var.get().strip().upper()
+            if area == "DB":
+                if not self.db_var.get().strip():
+                    raise ValueError("DB number required")
+                db = int(self.db_var.get())
+            else:
+                db = int(self.db_var.get()) if self.db_var.get().strip() else 0
             start_tokens = [s.strip() for s in self.start_var.get().split(",") if s.strip()]
             if not start_tokens:
                 raise ValueError("Start address required")
@@ -315,7 +330,14 @@ class StepEditor(tk.Toplevel):
             expected_val = expected_vals[0] if len(expected_vals) == 1 else expected_vals
 
         self.result = TestStep(
-            desc, db, start_val, type_val, write_val, expected_val, delay_ms
+            desc,
+            db,
+            start_val,
+            type_val,
+            write_val,
+            expected_val,
+            delay_ms,
+            area,
         )
         self.destroy()
 
@@ -571,11 +593,16 @@ class PLCConnection:
             self.client.disconnect()
             self.connected = False
 
-    def read(self, db: int, start: int, size: int) -> bytes:
+    def read(self, db: int, start: int, size: int, area: str = "DB") -> bytes:
+        if area == "M":
+            return self.client.read_area(areas["MK"], 0, start, size)
         return self.client.db_read(db, start, size)
 
-    def write(self, db: int, start: int, data: bytes) -> None:
-        self.client.db_write(db, start, data)
+    def write(self, db: int, start: int, data: bytes, area: str = "DB") -> None:
+        if area == "M":
+            self.client.write_area(areas["MK"], 0, start, data)
+        else:
+            self.client.db_write(db, start, data)
 
 
 class PLCTestGUI:
@@ -749,9 +776,10 @@ class PLCTestGUI:
                 write = fmt(s.write)
                 exp = fmt(s.expected)
                 delay = f" D:{s.delay_ms}ms" if s.delay_ms else ""
+                loc = f"DB{s.db_number}" if s.area == "DB" else "M"
                 self.step_list.insert(
                     tk.END,
-                    f"{s.description} | DB{s.db_number} [{start}] T:{dtype} W:{write} E:{exp}{delay}",
+                    f"{s.description} | {loc} [{start}] T:{dtype} W:{write} E:{exp}{delay}",
                 )
 
     def log_msg(self, msg: str) -> None:
@@ -1006,11 +1034,11 @@ class PLCTestGUI:
                         byte_str, bit_str = str(start).split(".")
                         byte_idx, bit_idx = int(byte_str), int(bit_str)
                         if w is not None:
-                            cur = bytearray(self.conn.read(step.db_number, byte_idx, 1))
+                            cur = bytearray(self.conn.read(step.db_number, byte_idx, 1, step.area))
                             set_bool(cur, 0, bit_idx, bool(w))
-                            self.conn.write(step.db_number, byte_idx, bytes(cur))
+                            self.conn.write(step.db_number, byte_idx, bytes(cur), step.area)
                         if e is not None:
-                            data = self.conn.read(step.db_number, byte_idx, 1)
+                            data = self.conn.read(step.db_number, byte_idx, 1, step.area)
                             val = get_bool(data, 0, bit_idx)
                             ok = val == bool(e)
                             self.log_msg(
@@ -1024,9 +1052,9 @@ class PLCTestGUI:
                     elif dtype == "BYTE":
                         addr = int(start)
                         if w is not None:
-                            self.conn.write(step.db_number, addr, bytes([int(w)]))
+                            self.conn.write(step.db_number, addr, bytes([int(w)]), step.area)
                         if e is not None:
-                            data = self.conn.read(step.db_number, addr, 1)
+                            data = self.conn.read(step.db_number, addr, 1, step.area)
                             val = data[0]
                             ok = val == int(e)
                             self.log_msg(
@@ -1043,9 +1071,9 @@ class PLCTestGUI:
                         if w is not None:
                             buf = bytearray(size)
                             set_func(buf, 0, w)
-                            self.conn.write(step.db_number, addr, bytes(buf))
+                            self.conn.write(step.db_number, addr, bytes(buf), step.area)
                         if e is not None:
-                            data = self.conn.read(step.db_number, addr, size)
+                            data = self.conn.read(step.db_number, addr, size, step.area)
                             val = get_func(data, 0)
                             if dtype == "REAL":
                                 ok = abs(val - float(e)) < 1e-6
