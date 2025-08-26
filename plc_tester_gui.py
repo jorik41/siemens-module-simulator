@@ -682,6 +682,9 @@ class PLCTestGUI:
         self.plan = TestPlan()
         self.conn = PLCConnection()
         self.json_editor: PlanJsonEditor | None = None
+        self.module_results: Dict[ModulePlan, bool] = {}
+        self.test_results: Dict[TestCase, bool] = {}
+        self.step_results: Dict[TestStep, bool] = {}
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -808,7 +811,10 @@ class PLCTestGUI:
     def refresh_modules(self) -> None:
         self.module_list.delete(0, tk.END)
         for m in self.plan.modules:
-            self.module_list.insert(tk.END, m.name)
+            prefix = ""
+            if m in self.module_results:
+                prefix = "✅ " if self.module_results[m] else "❌ "
+            self.module_list.insert(tk.END, prefix + m.name)
         self.refresh_tests()
 
     def refresh_tests(self) -> None:
@@ -816,7 +822,10 @@ class PLCTestGUI:
         module = self.current_module()
         if module:
             for t in module.tests:
-                self.test_list.insert(tk.END, t.name)
+                prefix = ""
+                if t in self.test_results:
+                    prefix = "✅ " if self.test_results[t] else "❌ "
+                self.test_list.insert(tk.END, prefix + t.name)
         self.refresh_steps()
 
     def refresh_steps(self) -> None:
@@ -846,10 +855,46 @@ class PLCTestGUI:
                 exp = fmt(s.expected)
                 delay = f" D:{s.delay_ms}ms" if s.delay_ms else ""
                 loc = f"DB{s.db_number}" if s.area == "DB" else "M"
-                self.step_list.insert(
-                    tk.END,
-                    f"{s.description} | {loc} [{start}] T:{dtype} W:{write} E:{exp}{delay}",
+                text = (
+                    f"{s.description} | {loc} [{start}] T:{dtype} W:{write} E:{exp}{delay}"
                 )
+                res = self.step_results.get(s)
+                prefix = ""
+                if res is not None:
+                    prefix = "✅ " if res else "❌ "
+                self.step_list.insert(tk.END, prefix + text)
+
+    def _mark_step(self, step: TestStep, index: int, passed: bool) -> None:
+        """Update UI and record result for a step."""
+
+        self.step_results[step] = passed
+        text = self.step_list.get(index)
+        text = re.sub(r"^[\u2705\u274C] ", "", text)
+        prefix = "✅ " if passed else "❌ "
+        self.step_list.delete(index)
+        self.step_list.insert(index, prefix + text)
+
+    def _mark_test(self, module: ModulePlan, test: TestCase, passed: bool) -> None:
+        """Update UI and record result for a test."""
+
+        self.test_results[test] = passed
+        idx = module.tests.index(test)
+        text = self.test_list.get(idx)
+        text = re.sub(r"^[\u2705\u274C] ", "", text)
+        prefix = "✅ " if passed else "❌ "
+        self.test_list.delete(idx)
+        self.test_list.insert(idx, prefix + text)
+
+    def _mark_module(self, module: ModulePlan, passed: bool) -> None:
+        """Update UI and record result for a module."""
+
+        self.module_results[module] = passed
+        idx = self.plan.modules.index(module)
+        text = self.module_list.get(idx)
+        text = re.sub(r"^[\u2705\u274C] ", "", text)
+        prefix = "✅ " if passed else "❌ "
+        self.module_list.delete(idx)
+        self.module_list.insert(idx, prefix + text)
 
     def log_msg(self, msg: str) -> None:
         self.log.insert(tk.END, msg + "\n")
@@ -1055,24 +1100,56 @@ class PLCTestGUI:
 
     # ------------------------------------------------------------------ Run tests
     def run_plan(self) -> None:
-        for module in self.plan.modules:
+        self.module_results.clear()
+        self.test_results.clear()
+        self.step_results.clear()
+        self.refresh_modules()
+        for m_idx, module in enumerate(self.plan.modules):
+            self.module_list.selection_clear(0, tk.END)
+            self.module_list.selection_set(m_idx)
+            self.module_list.activate(m_idx)
+            self.refresh_tests()
             self.log_msg(f"Module: {module.name}")
-            for test in module.tests:
-                self._run_test(test)
+            module_success = True
+            for t_idx, test in enumerate(module.tests):
+                self.test_list.selection_clear(0, tk.END)
+                self.test_list.selection_set(t_idx)
+                self.test_list.activate(t_idx)
+                self.refresh_steps()
+                for s in test.steps:
+                    self.step_results.pop(s, None)
+                success = self._run_test(test)
+                self._mark_test(module, test, success)
+                if not success:
+                    module_success = False
+            self._mark_module(module, module_success)
 
     def run_selected_test(self) -> None:
+        module = self.current_module()
         test = self.current_test()
-        if not test:
+        if not module or not test:
             messagebox.showwarning("No test", "Select a test to run.")
             return
-        self._run_test(test)
+        t_idx = module.tests.index(test)
+        self.test_list.selection_clear(0, tk.END)
+        self.test_list.selection_set(t_idx)
+        self.test_list.activate(t_idx)
+        self.refresh_steps()
+        for s in test.steps:
+            self.step_results.pop(s, None)
+        success = self._run_test(test)
+        self._mark_test(module, test, success)
+        if all(t in self.test_results for t in module.tests):
+            module_success = all(self.test_results[t] for t in module.tests)
+            self._mark_module(module, module_success)
 
-    def _run_test(self, test: TestCase) -> None:
+    def _run_test(self, test: TestCase) -> bool:
         self.log_msg(f"  Test: {test.name}")
         success = True
         failures: List[str] = []
         for idx, step in enumerate(test.steps, start=1):
             self.log_msg(f"    Step {idx}: {step.description}")
+            step_ok = True
             try:
                 starts = step.start if isinstance(step.start, list) else [step.start]
                 types = (
@@ -1118,6 +1195,7 @@ class PLCTestGUI:
                                     f"step {idx} ({step.description}) at {start}: expected {e} got {val}"
                                 )
                                 success = False
+                                step_ok = False
                     elif dtype == "BYTE":
                         addr = int(start)
                         if w is not None:
@@ -1134,6 +1212,7 @@ class PLCTestGUI:
                                     f"step {idx} ({step.description}) at {start}: expected {e} got {val}"
                                 )
                                 success = False
+                                step_ok = False
                     else:
                         size, set_func, get_func = TYPE_FUNCS[dtype]
                         addr = int(start)
@@ -1156,14 +1235,18 @@ class PLCTestGUI:
                                     f"step {idx} ({step.description}) at {start}: expected {e} got {val}"
                                 )
                                 success = False
+                                step_ok = False
             except Exception as exc:  # pragma: no cover - network
                 self.log_msg(f"      Error: {exc}")
                 failures.append(f"step {idx} ({step.description}): {exc}")
                 success = False
+                step_ok = False
+            self._mark_step(step, idx - 1, step_ok)
         self.log_msg(f"  Result: {'PASSED' if success else 'FAILED'}")
         if failures:
             for reason in failures:
                 self.log_msg(f"    Failure: {reason}")
+        return success
 
 
 def main() -> None:
