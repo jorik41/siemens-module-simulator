@@ -89,7 +89,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     areas: Dict[str, int] = {}
 
 
-@dataclass
+@dataclass(eq=False)
 class TestStep:
     """Single action within a test case."""
     description: str
@@ -102,14 +102,14 @@ class TestStep:
     area: str = "DB"
 
 
-@dataclass
+@dataclass(eq=False)
 class TestCase:
     """Collection of steps to validate a module behaviour."""
     name: str
     steps: List[TestStep] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(eq=False)
 class ModulePlan:
     """Group of test cases for a specific module."""
     name: str
