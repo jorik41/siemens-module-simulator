@@ -873,6 +873,7 @@ class PLCTestGUI:
         prefix = "✅ " if passed else "❌ "
         self.step_list.delete(index)
         self.step_list.insert(index, prefix + text)
+        self.step_list.selection_set(index)
 
     def _mark_test(self, module: ModulePlan, test: TestCase, passed: bool) -> None:
         """Update UI and record result for a test."""
@@ -884,6 +885,7 @@ class PLCTestGUI:
         prefix = "✅ " if passed else "❌ "
         self.test_list.delete(idx)
         self.test_list.insert(idx, prefix + text)
+        self.test_list.selection_set(idx)
 
     def _mark_module(self, module: ModulePlan, passed: bool) -> None:
         """Update UI and record result for a module."""
@@ -895,6 +897,7 @@ class PLCTestGUI:
         prefix = "✅ " if passed else "❌ "
         self.module_list.delete(idx)
         self.module_list.insert(idx, prefix + text)
+        self.module_list.selection_set(idx)
 
     def log_msg(self, msg: str) -> None:
         self.log.insert(tk.END, msg + "\n")
