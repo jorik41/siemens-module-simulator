@@ -34,7 +34,7 @@ try:
     try:  # snap7 >= 2
         from snap7.type import Areas
 
-        areas = {name: int(member) for name, member in Areas.__members__.items()}
+        areas = {name: member for name, member in Areas.__members__.items()}
     except Exception:  # pragma: no cover - fall back for older versions
         from snap7.snap7types import areas  # type: ignore[import]
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
