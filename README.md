@@ -8,6 +8,8 @@ This repository contains a simple Python GUI application for creating and execut
 - Write to and read from PLC data blocks
 - Expect specific values and verify them step-by-step
 - Save and load test plans as JSON files
+- Integrated step editor with validation and smart suggestions for next actions
+- Detailed failure log identifying which step failed and why
 
 ## Usage
 
