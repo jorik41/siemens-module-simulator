@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import snap7
+from plan_runner import run_json_plan as execute_plan
 from snap7.util import (
     get_bool,
     get_dint,
@@ -240,6 +241,45 @@ class StepEditor(tk.Toplevel):
             raise ValueError(f"Invalid {dtype} value: {token}") from exc
 
 
+DEFAULT_PLAN_JSON = "{\n  \"modules\": []\n}\n"
+
+
+class PlanJsonEditor(tk.Toplevel):
+    """Simple text editor to define plans in JSON and run them."""
+
+    def __init__(self, gui: "PLCTestGUI") -> None:
+        super().__init__(gui.root)
+        self.gui = gui
+        self.title("Plan JSON Editor")
+
+        self.text = tk.Text(self, width=80, height=25)
+        self.text.pack(fill=tk.BOTH, expand=True)
+        btn_frm = ttk.Frame(self)
+        btn_frm.pack(fill=tk.X)
+        ttk.Button(btn_frm, text="Run", command=self._run).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Close", command=self.destroy).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+
+        self.text.insert("1.0", DEFAULT_PLAN_JSON)
+
+    def _run(self) -> None:
+        raw = self.text.get("1.0", tk.END)
+        try:
+            data = json.loads(raw)
+        except Exception as exc:  # pragma: no cover - user input
+            messagebox.showerror("JSON error", str(exc))
+            return
+        execute_plan(
+            data,
+            ip=self.gui.ip_var.get(),
+            rack=self.gui.rack_var.get(),
+            slot=self.gui.slot_var.get(),
+        )
+
+
 class PLCConnection:
     """Wrapper around snap7 client."""
 
@@ -335,10 +375,17 @@ class PLCTestGUI:
         ttk.Button(run_frm, text="Run Selected Test", command=self.run_selected_test).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Load Plan", command=self.load_plan).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Save Plan", command=self.save_plan).pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frm, text="JSON Editor", command=self.open_json_editor).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.log = tk.Text(self.root, height=10)
         self.log.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
         self.root.rowconfigure(3, weight=1)
+
+    def open_json_editor(self) -> None:
+        """Open the built-in JSON plan editor."""
+        PlanJsonEditor(self)
 
     # ------------------------------------------------------------------ Helpers
     def _disallow_space_select(self, listbox: tk.Listbox) -> None:

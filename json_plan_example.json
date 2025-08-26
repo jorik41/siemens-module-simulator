@@ -1,0 +1,22 @@
+{
+  "modules": [
+    {
+      "name": "Demo",
+      "tests": [
+        {
+          "name": "Simple",
+          "steps": [
+            {
+              "description": "Write and verify INT",
+              "db_number": 1,
+              "start": 0,
+              "data_type": "INT",
+              "write": 123,
+              "expected": 123
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
