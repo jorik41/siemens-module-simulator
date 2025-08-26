@@ -5,7 +5,7 @@ A simple GUI to create and run PLC test plans using Snap7.
 import json
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Any, List
+from typing import Any, Dict, List, Union
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -80,6 +80,95 @@ TYPE_FUNCS = {
     "DWORD": (4, set_dword, get_dword),
     "REAL": (4, set_real, get_real),
 }
+
+
+def run_plan(plan: TestPlan, ip: str = "127.0.0.1", rack: int = 0, slot: int = 1) -> None:
+    """Run ``plan`` against the specified PLC."""
+    conn = PLCConnection()
+    conn.connect(ip, rack, slot)
+    try:
+        for module in plan.modules:
+            for test in module.tests:
+                _run_test(conn, test)
+    finally:
+        conn.disconnect()
+
+
+def run_json_plan(
+    data: Union[str, Dict[str, Any]],
+    ip: str = "127.0.0.1",
+    rack: int = 0,
+    slot: int = 1,
+) -> None:
+    """Run a test plan described as JSON."""
+
+    if isinstance(data, str):
+        with open(data, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    plan = TestPlan.from_dict(data)
+    run_plan(plan, ip=ip, rack=rack, slot=slot)
+
+
+def _run_test(conn: "PLCConnection", test: TestCase) -> None:
+    """Execute a single :class:`TestCase` using ``conn``."""
+
+    for step in test.steps:
+        starts = step.start if isinstance(step.start, list) else [step.start]
+        types = step.data_type if isinstance(step.data_type, list) else [step.data_type]
+        if len(types) == 1 and len(starts) > 1:
+            types = types * len(starts)
+        writes = step.write if isinstance(step.write, list) else ([step.write] if step.write is not None else [])
+        expecteds = (
+            step.expected if isinstance(step.expected, list) else ([step.expected] if step.expected is not None else [])
+        )
+
+        if step.delay_ms:
+            time.sleep(step.delay_ms / 1000.0)
+
+        for idx, start in enumerate(starts):
+            dtype = types[idx]
+            w = writes[idx] if idx < len(writes) else None
+            e = expecteds[idx] if idx < len(expecteds) else None
+            if dtype == "BOOL":
+                byte_str, bit_str = str(start).split(".")
+                byte_idx, bit_idx = int(byte_str), int(bit_str)
+                if w is not None:
+                    cur = bytearray(conn.read(step.db_number, byte_idx, 1))
+                    set_bool(cur, 0, bit_idx, bool(w))
+                    conn.write(step.db_number, byte_idx, bytes(cur))
+                if e is not None:
+                    data = conn.read(step.db_number, byte_idx, 1)
+                    val = get_bool(data, 0, bit_idx)
+                    if val != bool(e):
+                        raise AssertionError(
+                            f"{step.description} at {start}: expected {e} got {val}"
+                        )
+            elif dtype == "BYTE":
+                addr = int(start)
+                if w is not None:
+                    conn.write(step.db_number, addr, bytes([int(w)]))
+                if e is not None:
+                    data = conn.read(step.db_number, addr, 1)
+                    val = data[0]
+                    if val != int(e):
+                        raise AssertionError(
+                            f"{step.description} at {start}: expected {e} got {val}"
+                        )
+            else:
+                size, set_func, get_func = TYPE_FUNCS[dtype]
+                addr = int(start)
+                if w is not None:
+                    buf = bytearray(size)
+                    set_func(buf, 0, w)
+                    conn.write(step.db_number, addr, bytes(buf))
+                if e is not None:
+                    data = conn.read(step.db_number, addr, size)
+                    val = get_func(data, 0)
+                    ok = abs(val - float(e)) < 1e-6 if dtype == "REAL" else val == e
+                    if not ok:
+                        raise AssertionError(
+                            f"{step.description} at {start}: expected {e} got {val}"
+                        )
 
 
 class StepEditor(tk.Toplevel):
@@ -240,6 +329,97 @@ class StepEditor(tk.Toplevel):
             raise ValueError(f"Invalid {dtype} value: {token}") from exc
 
 
+DEFAULT_PLAN_JSON = "{\n  \"modules\": []\n}\n"
+
+
+class PlanJsonEditor(tk.Toplevel):
+    """JSON plan editor with live validation and templates."""
+
+    MODULE_TEMPLATE = '{\n  "name": "Module Name",\n  "tests": []\n}'
+    TEST_TEMPLATE = '{\n  "name": "Test Name",\n  "steps": []\n}'
+    STEP_TEMPLATE = (
+        '{\n  "description": "Step description",\n'
+        '  "db_number": 1,\n'
+        '  "start": 0,\n'
+        '  "data_type": "INT",\n'
+        '  "write": 0,\n'
+        '  "expected": 0,\n'
+        '  "delay_ms": 0\n}'
+    )
+
+    def __init__(self, gui: "PLCTestGUI") -> None:
+        super().__init__(gui.root)
+        self.gui = gui
+        self.title("Plan JSON Editor")
+
+        self.text = tk.Text(self, width=80, height=25)
+        self.text.pack(fill=tk.BOTH, expand=True)
+        self.text.bind("<KeyRelease>", lambda e: self._validate())
+
+        btn_frm = ttk.Frame(self)
+        btn_frm.pack(fill=tk.X)
+        ttk.Button(btn_frm, text="Run", command=self._run).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Module", command=self._insert_module).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Test", command=self._insert_test).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Step", command=self._insert_step).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Close", command=self.destroy).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+
+        self.status_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.status_var, anchor="w").pack(
+            fill=tk.X, padx=5
+        )
+
+        self.text.insert("1.0", DEFAULT_PLAN_JSON)
+        self._validate()
+
+    def _insert_module(self) -> None:
+        self.text.insert(tk.INSERT, self.MODULE_TEMPLATE)
+        self._validate()
+
+    def _insert_test(self) -> None:
+        self.text.insert(tk.INSERT, self.TEST_TEMPLATE)
+        self._validate()
+
+    def _insert_step(self) -> None:
+        self.text.insert(tk.INSERT, self.STEP_TEMPLATE)
+        self._validate()
+
+    def _validate(self) -> None:
+        raw = self.text.get("1.0", tk.END)
+        try:
+            json.loads(raw)
+        except Exception as exc:  # pragma: no cover - user input
+            self.status_var.set(f"JSON error: {exc}")
+            self.text.config(background="#ffecec")
+            return
+        self.status_var.set("JSON valid")
+        self.text.config(background="white")
+
+    def _run(self) -> None:
+        raw = self.text.get("1.0", tk.END)
+        try:
+            data = json.loads(raw)
+        except Exception as exc:  # pragma: no cover - user input
+            messagebox.showerror("JSON error", str(exc))
+            return
+        run_json_plan(
+            data,
+            ip=self.gui.ip_var.get(),
+            rack=self.gui.rack_var.get(),
+            slot=self.gui.slot_var.get(),
+        )
+
+
 class PLCConnection:
     """Wrapper around snap7 client."""
 
@@ -335,10 +515,17 @@ class PLCTestGUI:
         ttk.Button(run_frm, text="Run Selected Test", command=self.run_selected_test).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Load Plan", command=self.load_plan).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Save Plan", command=self.save_plan).pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frm, text="JSON Editor", command=self.open_json_editor).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.log = tk.Text(self.root, height=10)
         self.log.grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky="nsew")
         self.root.rowconfigure(3, weight=1)
+
+    def open_json_editor(self) -> None:
+        """Open the built-in JSON plan editor."""
+        PlanJsonEditor(self)
 
     # ------------------------------------------------------------------ Helpers
     def _disallow_space_select(self, listbox: tk.Listbox) -> None:
