@@ -197,6 +197,7 @@ class PLCTestGUI:
         self.module_list = tk.Listbox(module_frm, height=10)
         self.module_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.module_list.bind("<<ListboxSelect>>", lambda e: self.refresh_tests())
+        self._disallow_space_select(self.module_list)
         ttk.Button(module_frm, text="Add", command=self.add_module).pack(fill=tk.X)
         ttk.Button(module_frm, text="Remove", command=self.remove_module).pack(fill=tk.X)
 
@@ -206,6 +207,7 @@ class PLCTestGUI:
         self.test_list = tk.Listbox(test_frm, height=10)
         self.test_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.test_list.bind("<<ListboxSelect>>", lambda e: self.refresh_steps())
+        self._disallow_space_select(self.test_list)
         ttk.Button(test_frm, text="Add", command=self.add_test).pack(fill=tk.X)
         ttk.Button(test_frm, text="Remove", command=self.remove_test).pack(fill=tk.X)
 
@@ -214,6 +216,7 @@ class PLCTestGUI:
         step_frm.grid(row=1, column=2, padx=5, pady=5, sticky="ns")
         self.step_list = tk.Listbox(step_frm, height=10, width=40)
         self.step_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._disallow_space_select(self.step_list)
         ttk.Button(step_frm, text="Add", command=self.add_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Edit", command=self.edit_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Remove", command=self.remove_step).pack(fill=tk.X)
@@ -231,6 +234,25 @@ class PLCTestGUI:
         self.root.rowconfigure(3, weight=1)
 
     # ------------------------------------------------------------------ Helpers
+    def _disallow_space_select(self, listbox: tk.Listbox) -> None:
+        """Ignore clicks on empty space inside a Listbox.
+
+        Tkinter's default Listbox behaviour allows clearing the current
+        selection by clicking on the blank area below the last item. This
+        method binds an event handler that prevents such clicks from
+        changing the selection, ensuring users can only select actual
+        items.
+        """
+
+        def handler(event: tk.Event) -> str | None:
+            index = listbox.nearest(event.y)
+            bbox = listbox.bbox(index)
+            if not bbox or event.y > bbox[1] + bbox[3]:
+                return "break"  # ignore clicks outside any item
+            return None
+
+        listbox.bind("<Button-1>", handler)
+
     def current_module(self) -> ModulePlan | None:
         idx = self.module_list.curselection()
         if not idx:
