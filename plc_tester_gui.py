@@ -330,9 +330,6 @@ class StepEditor(tk.Toplevel):
             raise ValueError(f"Invalid {dtype} value: {token}") from exc
 
 
-DEFAULT_PLAN_JSON = "{\n  \"modules\": []\n}\n"
-
-
 class PlanJsonEditor(tk.Toplevel):
     """JSON plan editor with live validation and templates."""
 
@@ -365,6 +362,7 @@ class PlanJsonEditor(tk.Toplevel):
     def __init__(self, gui: "PLCTestGUI") -> None:
         super().__init__(gui.root)
         self.gui = gui
+        self.gui.json_editor = self
         self.title("Plan JSON Editor")
 
         self.text = tk.Text(self, width=80, height=25)
@@ -397,7 +395,17 @@ class PlanJsonEditor(tk.Toplevel):
             fill=tk.X, padx=5
         )
 
-        self.text.insert("1.0", DEFAULT_PLAN_JSON)
+        self.update_from_plan()
+
+    def destroy(self) -> None:  # type: ignore[override]
+        self.gui.json_editor = None
+        super().destroy()
+
+    def update_from_plan(self) -> None:
+        """Refresh the text widget from the GUI's current plan."""
+        plan_json = json.dumps(self.gui.plan.to_dict(), indent=2)
+        self.text.delete("1.0", tk.END)
+        self.text.insert("1.0", plan_json)
         self._validate()
 
     def _insert_module(self) -> None:
@@ -413,8 +421,17 @@ class PlanJsonEditor(tk.Toplevel):
         self._on_key_release(None)
 
     def _on_key_release(self, event: tk.Event | None) -> None:
-        if self._validate():
+        raw = self.text.get("1.0", tk.END)
+        try:
+            data = json.loads(raw)
+            self.gui.plan = TestPlan.from_dict(data)
+            self.gui.refresh_modules()
+            self.status_var.set("JSON valid")
+            self.text.config(background="white")
             self._update_suggestions()
+        except Exception as exc:  # pragma: no cover - user input
+            self.status_var.set(f"JSON error: {exc}")
+            self.text.config(background="#ffecec")
 
     def _validate(self) -> bool:
         raw = self.text.get("1.0", tk.END)
@@ -481,6 +498,8 @@ class PlanJsonEditor(tk.Toplevel):
         raw = self.text.get("1.0", tk.END)
         try:
             data = json.loads(raw)
+            self.gui.plan = TestPlan.from_dict(data)
+            self.gui.refresh_modules()
         except Exception as exc:  # pragma: no cover - user input
             messagebox.showerror("JSON error", str(exc))
             return
@@ -522,6 +541,7 @@ class PLCTestGUI:
         self.root = root
         self.plan = TestPlan()
         self.conn = PLCConnection()
+        self.json_editor: PlanJsonEditor | None = None
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -597,7 +617,15 @@ class PLCTestGUI:
 
     def open_json_editor(self) -> None:
         """Open the built-in JSON plan editor."""
-        PlanJsonEditor(self)
+        if self.json_editor:
+            self.json_editor.focus()
+            return
+        self.json_editor = PlanJsonEditor(self)
+
+    def _sync_json_editor(self) -> None:
+        """Update open JSON editor with the latest plan."""
+        if self.json_editor:
+            self.json_editor.update_from_plan()
 
     # ------------------------------------------------------------------ Helpers
     def _disallow_space_select(self, listbox: tk.Listbox) -> None:
@@ -689,6 +717,7 @@ class PLCTestGUI:
         if name:
             self.plan.modules.append(ModulePlan(name=name))
             self.refresh_modules()
+            self._sync_json_editor()
 
     def remove_module(self) -> None:
         module = self.current_module()
@@ -697,6 +726,7 @@ class PLCTestGUI:
             return
         self.plan.modules.remove(module)
         self.refresh_modules()
+        self._sync_json_editor()
 
     def add_test(self) -> None:
         module = self.current_module()
@@ -707,6 +737,7 @@ class PLCTestGUI:
         if name:
             module.tests.append(TestCase(name=name))
             self.refresh_tests()
+            self._sync_json_editor()
 
     def remove_test(self) -> None:
         module = self.current_module()
@@ -716,6 +747,7 @@ class PLCTestGUI:
             return
         module.tests.remove(test)
         self.refresh_tests()
+        self._sync_json_editor()
 
     def add_step(self) -> None:
         test = self.current_test()
@@ -728,6 +760,7 @@ class PLCTestGUI:
         if step:
             test.steps.append(step)
             self.refresh_steps()
+            self._sync_json_editor()
             self.suggest_next_step(step)
 
     def edit_step(self) -> None:
@@ -743,6 +776,7 @@ class PLCTestGUI:
         if new_step:
             test.steps[idx[0]] = new_step
             self.refresh_steps()
+            self._sync_json_editor()
             self.suggest_next_step(new_step)
 
     def remove_step(self) -> None:
@@ -753,6 +787,7 @@ class PLCTestGUI:
             return
         del test.steps[idx[0]]
         self.refresh_steps()
+        self._sync_json_editor()
 
     def suggest_next_step(self, step: TestStep) -> None:
         """Provide simple suggestions for likely next steps."""
@@ -774,6 +809,7 @@ class PLCTestGUI:
             data = json.load(f)
         self.plan = TestPlan.from_dict(data)
         self.refresh_modules()
+        self._sync_json_editor()
         self.log_msg(f"Loaded plan from {path}")
 
     def save_plan(self) -> None:
