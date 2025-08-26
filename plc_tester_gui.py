@@ -333,7 +333,19 @@ DEFAULT_PLAN_JSON = "{\n  \"modules\": []\n}\n"
 
 
 class PlanJsonEditor(tk.Toplevel):
-    """Simple text editor to define plans in JSON and run them."""
+    """JSON plan editor with live validation and templates."""
+
+    MODULE_TEMPLATE = '{\n  "name": "Module Name",\n  "tests": []\n}'
+    TEST_TEMPLATE = '{\n  "name": "Test Name",\n  "steps": []\n}'
+    STEP_TEMPLATE = (
+        '{\n  "description": "Step description",\n'
+        '  "db_number": 1,\n'
+        '  "start": 0,\n'
+        '  "data_type": "INT",\n'
+        '  "write": 0,\n'
+        '  "expected": 0,\n'
+        '  "delay_ms": 0\n}'
+    )
 
     def __init__(self, gui: "PLCTestGUI") -> None:
         super().__init__(gui.root)
@@ -342,16 +354,56 @@ class PlanJsonEditor(tk.Toplevel):
 
         self.text = tk.Text(self, width=80, height=25)
         self.text.pack(fill=tk.BOTH, expand=True)
+        self.text.bind("<KeyRelease>", lambda e: self._validate())
+
         btn_frm = ttk.Frame(self)
         btn_frm.pack(fill=tk.X)
         ttk.Button(btn_frm, text="Run", command=self._run).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Module", command=self._insert_module).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Test", command=self._insert_test).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Insert Step", command=self._insert_step).pack(
             side=tk.LEFT, padx=5, pady=5
         )
         ttk.Button(btn_frm, text="Close", command=self.destroy).pack(
             side=tk.LEFT, padx=5, pady=5
         )
 
+        self.status_var = tk.StringVar(value="")
+        ttk.Label(self, textvariable=self.status_var, anchor="w").pack(
+            fill=tk.X, padx=5
+        )
+
         self.text.insert("1.0", DEFAULT_PLAN_JSON)
+        self._validate()
+
+    def _insert_module(self) -> None:
+        self.text.insert(tk.INSERT, self.MODULE_TEMPLATE)
+        self._validate()
+
+    def _insert_test(self) -> None:
+        self.text.insert(tk.INSERT, self.TEST_TEMPLATE)
+        self._validate()
+
+    def _insert_step(self) -> None:
+        self.text.insert(tk.INSERT, self.STEP_TEMPLATE)
+        self._validate()
+
+    def _validate(self) -> None:
+        raw = self.text.get("1.0", tk.END)
+        try:
+            json.loads(raw)
+        except Exception as exc:  # pragma: no cover - user input
+            self.status_var.set(f"JSON error: {exc}")
+            self.text.config(background="#ffecec")
+            return
+        self.status_var.set("JSON valid")
+        self.text.config(background="white")
 
     def _run(self) -> None:
         raw = self.text.get("1.0", tk.END)
