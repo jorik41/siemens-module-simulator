@@ -28,7 +28,10 @@ try:
         set_word,
     )
     from snap7.snap7types import areas
-except Exception:  # pragma: no cover - optional dependency
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    # Only treat a missing module as optional. Other import errors should
+    # surface so users see the underlying issue instead of being told the
+    # dependency is simply absent.
     snap7 = None
 
     def _missing_snap7(*_args: object, **_kwargs: object) -> None:
