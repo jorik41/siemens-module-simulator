@@ -27,51 +27,13 @@ This repository contains a simple Python GUI application for creating and execut
    ```
 3. Use the interface to create modules, add tests and steps, and run them against the connected PLC. Results appear in the log area.
 
-### Programmatic Test Plans
+### JSON Test Plans
 
-For automated scenarios you can define test plans as JSON and run them without
-using the GUI dialogs. A minimal plan looks like:
-
-```json
-{
-  "modules": [
-    {
-      "name": "Demo",
-      "tests": [
-        {
-          "name": "Simple",
-          "steps": [
-            {
-              "description": "Write and verify INT",
-              "db_number": 1,
-              "start": 0,
-              "data_type": "INT",
-              "write": 123,
-              "expected": 123
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-Save this to ``plan.json`` and execute it with:
-
-```bash
-python plan_runner.py plan.json --ip 127.0.0.1 --rack 0 --slot 1
-```
-
-See ``json_plan_example.json`` and ``run_json_example.py`` for a complete
-example.
-
-### In-GUI JSON Editor
-
-The GUI includes a basic editor for these JSON plans. Use the **JSON Editor**
-button in the *Run* frame to open it. The editor starts with a simple template
-and expects a JSON object describing the plan. Press **Run** to execute the
-plan against the connected PLC using the current connection settings.
+Test plans can be represented as JSON and executed directly from the GUI. Use
+the **JSON Editor** button in the *Run* frame to open a simple editor containing
+a template plan. Modify the JSON as needed and press **Run** to execute it
+against the currently connected PLC. Plans can also be saved to or loaded from
+disk using the standard file dialogs.
 
 ### Step Input Tips
 
