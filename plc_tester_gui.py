@@ -27,7 +27,16 @@ try:
         set_real,
         set_word,
     )
-    from snap7.snap7types import areas
+
+    # ``python-snap7`` 2.x renamed ``snap7.snap7types`` to ``snap7.type`` and
+    # replaced the ``areas`` mapping with an ``Areas`` enum.  Build a compatible
+    # dictionary regardless of the installed snap7 version.
+    try:  # snap7 >= 2
+        from snap7.type import Areas
+
+        areas = {name: int(member) for name, member in Areas.__members__.items()}
+    except Exception:  # pragma: no cover - fall back for older versions
+        from snap7.snap7types import areas  # type: ignore[import]
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     # Only treat a missing module as optional. Other import errors should
     # surface so users see the underlying issue instead of being told the
