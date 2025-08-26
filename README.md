@@ -7,6 +7,9 @@ This repository contains a simple Python GUI application for creating and execut
 - Define modules, tests, and individual steps in a friendly GUI
 - Write to and read from PLC data blocks
 - Expect specific values and verify them step-by-step
+- Execute simple delays between actions to build timer-based sequences
+- Write and read multiple address/value pairs within a single step
+- Support common Siemens data types (BOOL, BYTE, WORD, DWORD, INT, DINT, REAL)
 - Save and load test plans as JSON files
 - Integrated step editor with validation and smart suggestions for next actions
 - Edit existing steps through a dedicated editor
@@ -23,4 +26,11 @@ This repository contains a simple Python GUI application for creating and execut
    python plc_tester_gui.py
    ```
 3. Use the interface to create modules, add tests and steps, and run them against the connected PLC. Results appear in the log area.
+
+### Step Input Tips
+
+- Multiple start bytes can be entered separated by commas (e.g. `0,4,8`).
+- Provide matching data types separated by commas (e.g. `INT,REAL`). Use `byte.bit` for BOOL addresses.
+- Enter corresponding write or expected values separated by commas (e.g. `5,3.14`).
+- An optional delay (milliseconds) can be specified to pause before executing the step's operations.
 
