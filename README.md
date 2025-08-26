@@ -15,6 +15,7 @@ This repository contains a simple Python GUI application for creating and execut
 - Edit existing steps through a dedicated editor
 - Detailed failure log identifying which step failed and why
 - Built-in JSON editor with live syntax checking, auto-completion, and templates
+- Edit JSON for individual modules, tests, or steps with automatic plan updates
 
 ## Usage
 
@@ -34,6 +35,9 @@ Test plans can be represented as JSON and executed directly from the GUI. Use
 the **JSON Editor** button in the *Run* frame to open a helper that validates
 syntax as you type, suggests field names, supports Tab-based auto-completion,
 and offers quick templates for modules, tests, and steps.
+Each Module, Test, and Step panel also includes an **Edit JSON** button to work
+on just that portion of the plan without the distraction of the full file. The
+overall plan is synchronized automatically.
 Modify the JSON as needed and press **Run** to execute it against the currently
 connected PLC. Plans can also be saved to or loaded from disk using the standard
 file dialogs.

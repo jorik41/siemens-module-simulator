@@ -6,7 +6,7 @@ import json
 import time
 import re
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Callable
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -511,6 +511,50 @@ class PlanJsonEditor(tk.Toplevel):
         )
 
 
+class JsonEditDialog(tk.Toplevel):
+    """Simple JSON editor for a portion of the plan."""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        title: str,
+        data: Dict[str, Any],
+        on_save: Callable[[Dict[str, Any]], bool],
+    ) -> None:
+        super().__init__(master)
+        self.title(title)
+        self.resizable(True, True)
+        self.on_save = on_save
+
+        self.text = tk.Text(self, width=60, height=20)
+        self.text.pack(fill=tk.BOTH, expand=True)
+        self.text.insert("1.0", json.dumps(data, indent=2))
+
+        btn_frm = ttk.Frame(self)
+        btn_frm.pack(fill=tk.X)
+        ttk.Button(btn_frm, text="Save", command=self._save).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(btn_frm, text="Cancel", command=self.destroy).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+
+        self.grab_set()
+        self.wait_visibility()
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _save(self) -> None:
+        raw = self.text.get("1.0", tk.END)
+        try:
+            data = json.loads(raw)
+        except Exception as exc:  # pragma: no cover - user input
+            messagebox.showerror("JSON error", str(exc))
+            return
+        if self.on_save(data):
+            self.destroy()
+
+
 class PLCConnection:
     """Wrapper around snap7 client."""
 
@@ -577,6 +621,7 @@ class PLCTestGUI:
         self._disallow_space_select(self.module_list)
         ttk.Button(module_frm, text="Add", command=self.add_module).pack(fill=tk.X)
         ttk.Button(module_frm, text="Remove", command=self.remove_module).pack(fill=tk.X)
+        ttk.Button(module_frm, text="Edit JSON", command=self.edit_module_json).pack(fill=tk.X)
 
         # Test list
         test_frm = ttk.LabelFrame(self.root, text="Tests")
@@ -587,6 +632,7 @@ class PLCTestGUI:
         self._disallow_space_select(self.test_list)
         ttk.Button(test_frm, text="Add", command=self.add_test).pack(fill=tk.X)
         ttk.Button(test_frm, text="Remove", command=self.remove_test).pack(fill=tk.X)
+        ttk.Button(test_frm, text="Edit JSON", command=self.edit_test_json).pack(fill=tk.X)
 
         # Step list
         step_frm = ttk.LabelFrame(self.root, text="Steps")
@@ -599,6 +645,7 @@ class PLCTestGUI:
         ttk.Button(step_frm, text="Add", command=self.add_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Edit", command=self.edit_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Remove", command=self.remove_step).pack(fill=tk.X)
+        ttk.Button(step_frm, text="Edit JSON", command=self.edit_step_json).pack(fill=tk.X)
 
         # Run frame
         run_frm = ttk.LabelFrame(self.root, text="Run")
@@ -728,6 +775,33 @@ class PLCTestGUI:
         self.refresh_modules()
         self._sync_json_editor()
 
+    def edit_module_json(self) -> None:
+        module = self.current_module()
+        idx = self.module_list.curselection()
+        if not module or not idx:
+            messagebox.showwarning("No selection", "Select a module to edit.")
+            return
+        data = asdict(module)
+
+        def save(new_data: Dict[str, Any]) -> bool:
+            try:
+                tests = []
+                for t in new_data.get("tests", []):
+                    steps = [TestStep(**s) for s in t.get("steps", [])]
+                    tests.append(TestCase(name=t["name"], steps=steps))
+                new_module = ModulePlan(name=new_data.get("name", module.name), tests=tests)
+            except Exception as exc:  # pragma: no cover - user input
+                messagebox.showerror("JSON error", str(exc))
+                return False
+            self.plan.modules[idx[0]] = new_module
+            self.refresh_modules()
+            self.refresh_tests()
+            self.refresh_steps()
+            self._sync_json_editor()
+            return True
+
+        JsonEditDialog(self.root, "Edit Module JSON", data, save)
+
     def add_test(self) -> None:
         module = self.current_module()
         if not module:
@@ -748,6 +822,30 @@ class PLCTestGUI:
         module.tests.remove(test)
         self.refresh_tests()
         self._sync_json_editor()
+
+    def edit_test_json(self) -> None:
+        module = self.current_module()
+        idx = self.test_list.curselection()
+        if not module or not idx:
+            messagebox.showwarning("No selection", "Select a test to edit.")
+            return
+        test = module.tests[idx[0]]
+        data = asdict(test)
+
+        def save(new_data: Dict[str, Any]) -> bool:
+            try:
+                steps = [TestStep(**s) for s in new_data.get("steps", [])]
+                new_test = TestCase(name=new_data.get("name", test.name), steps=steps)
+            except Exception as exc:  # pragma: no cover - user input
+                messagebox.showerror("JSON error", str(exc))
+                return False
+            module.tests[idx[0]] = new_test
+            self.refresh_tests()
+            self.refresh_steps()
+            self._sync_json_editor()
+            return True
+
+        JsonEditDialog(self.root, "Edit Test JSON", data, save)
 
     def add_step(self) -> None:
         test = self.current_test()
@@ -788,6 +886,29 @@ class PLCTestGUI:
         del test.steps[idx[0]]
         self.refresh_steps()
         self._sync_json_editor()
+
+    def edit_step_json(self) -> None:
+        test = self.current_test()
+        idx = self.step_list.curselection()
+        if not (test and idx):
+            messagebox.showwarning("No selection", "Select a step to edit.")
+            return
+        step = test.steps[idx[0]]
+        data = asdict(step)
+
+        def save(new_data: Dict[str, Any]) -> bool:
+            try:
+                new_step = TestStep(**new_data)
+            except Exception as exc:  # pragma: no cover - user input
+                messagebox.showerror("JSON error", str(exc))
+                return False
+            test.steps[idx[0]] = new_step
+            self.refresh_steps()
+            self._sync_json_editor()
+            self.suggest_next_step(new_step)
+            return True
+
+        JsonEditDialog(self.root, "Edit Step JSON", data, save)
 
     def suggest_next_step(self, step: TestStep) -> None:
         """Provide simple suggestions for likely next steps."""
