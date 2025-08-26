@@ -194,7 +194,7 @@ class PLCTestGUI:
         # Module list
         module_frm = ttk.LabelFrame(self.root, text="Modules")
         module_frm.grid(row=1, column=0, padx=5, pady=5, sticky="ns")
-        self.module_list = tk.Listbox(module_frm, height=10)
+        self.module_list = tk.Listbox(module_frm, height=10, exportselection=False)
         self.module_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.module_list.bind("<<ListboxSelect>>", lambda e: self.refresh_tests())
         self._disallow_space_select(self.module_list)
@@ -204,7 +204,7 @@ class PLCTestGUI:
         # Test list
         test_frm = ttk.LabelFrame(self.root, text="Tests")
         test_frm.grid(row=1, column=1, padx=5, pady=5, sticky="ns")
-        self.test_list = tk.Listbox(test_frm, height=10)
+        self.test_list = tk.Listbox(test_frm, height=10, exportselection=False)
         self.test_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.test_list.bind("<<ListboxSelect>>", lambda e: self.refresh_steps())
         self._disallow_space_select(self.test_list)
@@ -214,7 +214,9 @@ class PLCTestGUI:
         # Step list
         step_frm = ttk.LabelFrame(self.root, text="Steps")
         step_frm.grid(row=1, column=2, padx=5, pady=5, sticky="ns")
-        self.step_list = tk.Listbox(step_frm, height=10, width=40)
+        self.step_list = tk.Listbox(
+            step_frm, height=10, width=40, exportselection=False
+        )
         self.step_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._disallow_space_select(self.step_list)
         ttk.Button(step_frm, text="Add", command=self.add_step).pack(fill=tk.X)
