@@ -56,6 +56,74 @@ class TestPlan:
         return cls(modules=modules)
 
 
+class StepEditor(tk.Toplevel):
+    """Dialog to create or edit a :class:`TestStep`.
+
+    The editor displays all fields at once so users can quickly define a
+    step without navigating multiple popups. Inputs are validated before
+    the resulting :class:`TestStep` is returned.
+    """
+
+    def __init__(self, master: tk.Misc, title: str = "Step") -> None:
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.result: TestStep | None = None
+
+        self.description_var = tk.StringVar()
+        self.db_var = tk.StringVar()
+        self.start_var = tk.StringVar()
+        self.write_var = tk.StringVar()
+        self.expected_var = tk.StringVar()
+
+        frm = ttk.Frame(self)
+        frm.pack(padx=10, pady=10)
+
+        ttk.Label(frm, text="Description").grid(row=0, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.description_var, width=40).grid(row=0, column=1)
+
+        ttk.Label(frm, text="DB number").grid(row=1, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=1, column=1, sticky="w")
+
+        ttk.Label(frm, text="Start byte").grid(row=2, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.start_var, width=10).grid(row=2, column=1, sticky="w")
+
+        ttk.Label(frm, text="Write bytes (comma)").grid(row=3, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.write_var, width=20).grid(row=3, column=1, sticky="w")
+
+        ttk.Label(frm, text="Expected bytes").grid(row=4, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.expected_var, width=20).grid(row=4, column=1, sticky="w")
+
+        btn_frm = ttk.Frame(frm)
+        btn_frm.grid(row=5, column=0, columnspan=2, pady=(10, 0))
+        ttk.Button(btn_frm, text="OK", command=self._on_ok).grid(row=0, column=0, padx=5)
+        ttk.Button(btn_frm, text="Cancel", command=self.destroy).grid(row=0, column=1, padx=5)
+
+        self.grab_set()
+        self.wait_visibility()
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _on_ok(self) -> None:
+        try:
+            desc = self.description_var.get().strip()
+            if not desc:
+                raise ValueError("Description required")
+            db = int(self.db_var.get())
+            start = int(self.start_var.get())
+
+            write = [int(x) for x in self.write_var.get().split(",") if x.strip()]
+            write = write or None
+            expected = [int(x) for x in self.expected_var.get().split(",") if x.strip()]
+            expected = expected or None
+        except ValueError as exc:
+            messagebox.showerror("Invalid input", str(exc))
+            return
+
+        self.result = TestStep(desc, db, start, write, expected)
+        self.destroy()
+
+
 class PLCConnection:
     """Wrapper around snap7 client."""
 
@@ -226,21 +294,13 @@ class PLCTestGUI:
         test = self.current_test()
         if not test:
             return
-        desc = simpledialog.askstring("Step", "Description:")
-        if desc is None:
-            return
-        db = simpledialog.askinteger("Step", "DB number:")
-        if db is None:
-            return
-        start = simpledialog.askinteger("Step", "Start byte:")
-        if start is None:
-            return
-        write_str = simpledialog.askstring("Step", "Bytes to write (comma separated):")
-        exp_str = simpledialog.askstring("Step", "Expected bytes (comma separated):")
-        write = [int(x) for x in write_str.split(",") if x.strip()] if write_str else None
-        expected = [int(x) for x in exp_str.split(",") if x.strip()] if exp_str else None
-        test.steps.append(TestStep(desc, db, start, write, expected))
-        self.refresh_steps()
+        editor = StepEditor(self.root)
+        self.root.wait_window(editor)
+        step = editor.result
+        if step:
+            test.steps.append(step)
+            self.refresh_steps()
+            self.suggest_next_step(step)
 
     def remove_step(self) -> None:
         test = self.current_test()
@@ -248,6 +308,16 @@ class PLCTestGUI:
         if test and idx:
             del test.steps[idx[0]]
             self.refresh_steps()
+
+    def suggest_next_step(self, step: TestStep) -> None:
+        """Provide simple suggestions for likely next steps."""
+
+        if step.write and not step.expected:
+            self.log_msg(
+                f"Suggestion: add a verification step for DB{step.db_number} start {step.start}."
+            )
+        elif step.expected and not step.write:
+            self.log_msg("Suggestion: add a write step before verifying these bytes.")
 
     # ------------------------------------------------------------------ Load/Save
     def load_plan(self) -> None:
@@ -298,20 +368,31 @@ class PLCTestGUI:
     def _run_test(self, test: TestCase) -> None:
         self.log_msg(f"  Test: {test.name}")
         success = True
-        for step in test.steps:
-            self.log_msg(f"    {step.description}")
+        failures: List[str] = []
+        for idx, step in enumerate(test.steps, start=1):
+            self.log_msg(f"    Step {idx}: {step.description}")
             try:
                 if step.write:
                     self.conn.write(step.db_number, step.start, bytes(step.write))
                 if step.expected:
                     data = self.conn.read(step.db_number, step.start, len(step.expected))
                     ok = list(data) == step.expected
-                    self.log_msg(f"      Expect {step.expected} got {list(data)} -> {'OK' if ok else 'FAIL'}")
-                    success &= ok
+                    self.log_msg(
+                        f"      Expect {step.expected} got {list(data)} -> {'OK' if ok else 'FAIL'}"
+                    )
+                    if not ok:
+                        failures.append(
+                            f"step {idx} ({step.description}): expected {step.expected} got {list(data)}"
+                        )
+                        success = False
             except Exception as exc:  # pragma: no cover - network
                 self.log_msg(f"      Error: {exc}")
+                failures.append(f"step {idx} ({step.description}): {exc}")
                 success = False
         self.log_msg(f"  Result: {'PASSED' if success else 'FAILED'}")
+        if failures:
+            for reason in failures:
+                self.log_msg(f"    Failure: {reason}")
 
 
 def main() -> None:
