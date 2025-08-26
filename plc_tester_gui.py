@@ -64,7 +64,9 @@ class StepEditor(tk.Toplevel):
     the resulting :class:`TestStep` is returned.
     """
 
-    def __init__(self, master: tk.Misc, title: str = "Step") -> None:
+    def __init__(
+        self, master: tk.Misc, step: TestStep | None = None, title: str = "Step"
+    ) -> None:
         super().__init__(master)
         self.title(title)
         self.resizable(False, False)
@@ -75,6 +77,15 @@ class StepEditor(tk.Toplevel):
         self.start_var = tk.StringVar()
         self.write_var = tk.StringVar()
         self.expected_var = tk.StringVar()
+
+        if step:
+            self.description_var.set(step.description)
+            self.db_var.set(str(step.db_number))
+            self.start_var.set(str(step.start))
+            if step.write:
+                self.write_var.set(",".join(str(b) for b in step.write))
+            if step.expected:
+                self.expected_var.set(",".join(str(b) for b in step.expected))
 
         frm = ttk.Frame(self)
         frm.pack(padx=10, pady=10)
@@ -204,6 +215,7 @@ class PLCTestGUI:
         self.step_list = tk.Listbox(step_frm, height=10, width=40)
         self.step_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         ttk.Button(step_frm, text="Add", command=self.add_step).pack(fill=tk.X)
+        ttk.Button(step_frm, text="Edit", command=self.edit_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Remove", command=self.remove_step).pack(fill=tk.X)
 
         # Run frame
@@ -301,6 +313,20 @@ class PLCTestGUI:
             test.steps.append(step)
             self.refresh_steps()
             self.suggest_next_step(step)
+
+    def edit_step(self) -> None:
+        test = self.current_test()
+        idx = self.step_list.curselection()
+        if not test or not idx:
+            return
+        step = test.steps[idx[0]]
+        editor = StepEditor(self.root, step=step, title="Edit Step")
+        self.root.wait_window(editor)
+        new_step = editor.result
+        if new_step:
+            test.steps[idx[0]] = new_step
+            self.refresh_steps()
+            self.suggest_next_step(new_step)
 
     def remove_step(self) -> None:
         test = self.current_test()
