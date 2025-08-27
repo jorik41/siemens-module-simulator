@@ -305,13 +305,38 @@ class StepEditor(tk.Toplevel):
         row += 1
 
         if self.db_layout:
+            ttk.Label(frm, text="DB").grid(row=row, column=0, sticky="w")
+            self.db_combo = ttk.Combobox(
+                frm, values=self._build_db_list(), width=30
+            )
+            self.db_combo.grid(row=row, column=1, sticky="w")
+            self.db_combo.bind("<<ComboboxSelected>>", self._on_db_selected)
+            row += 1
+
             ttk.Label(frm, text="Variable").grid(row=row, column=0, sticky="w")
-            self.var_combo = ttk.Combobox(frm, values=self._build_var_list(), width=30)
+            self.var_combo = ttk.Combobox(frm, values=[], width=30)
             self.var_combo.grid(row=row, column=1, sticky="w")
             self.var_combo.bind("<<ComboboxSelected>>", self._on_var_selected)
             row += 1
         else:
+            self.db_combo = None
             self.var_combo = None
+
+        if self.db_layout and step and self.db_combo:
+            db_key = str(self.db_var.get())
+            if db_key in self.db_layout:
+                self.db_combo.set(
+                    f"{db_key}:{self.db_layout[db_key].get('name', '')}"
+                )
+                self._on_db_selected(None)
+                start_val = str(self.start_var.get())
+                for var in self.db_layout[db_key].get("variables", []):
+                    offset = var.get("offset", 0)
+                    bit = var.get("bit")
+                    s = f"{offset}.{bit}" if bit is not None else str(offset)
+                    if s == start_val:
+                        self.var_combo.set(var.get("name", ""))
+                        break
 
         ttk.Label(frm, text="DB number").grid(row=row, column=0, sticky="w")
         ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=row, column=1, sticky="w")
@@ -355,25 +380,33 @@ class StepEditor(tk.Toplevel):
         self.transient(master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
-    def _build_var_list(self) -> List[str]:
-        options: List[str] = []
-        for db, info in self.db_layout.items():
-            for var in info.get("variables", []):
-                options.append(f"{db}:{var['name']}")
-        return sorted(options)
+    def _build_db_list(self) -> List[str]:
+        return sorted(
+            f"{db}:{info.get('name', '')}" for db, info in self.db_layout.items()
+        )
+
+    def _build_var_list(self, db_str: str) -> List[str]:
+        info = self.db_layout.get(db_str, {})
+        return [var.get("name", "") for var in info.get("variables", [])]
+
+    def _on_db_selected(self, _event: tk.Event) -> None:
+        sel = self.db_combo.get()
+        db_str = sel.split(":", 1)[0]
+        self.db_var.set(db_str)
+        self.var_combo["values"] = self._build_var_list(db_str)
+        self.var_combo.set("")
 
     def _on_var_selected(self, _event: tk.Event) -> None:
-        sel = self.var_combo.get()
-        if ":" not in sel:
-            return
-        db_str, var_name = sel.split(":", 1)
-        self.db_var.set(db_str)
-        info = self.db_layout.get(db_str, {})
+        sel_db = self.db_var.get()
+        var_name = self.var_combo.get()
+        info = self.db_layout.get(sel_db, {})
         for var in info.get("variables", []):
             if var.get("name") == var_name:
                 offset = var.get("offset", 0)
                 bit = var.get("bit")
-                self.start_var.set(f"{offset}.{bit}" if bit is not None else str(offset))
+                self.start_var.set(
+                    f"{offset}.{bit}" if bit is not None else str(offset)
+                )
                 vtype = var.get("type")
                 if vtype:
                     self.type_var.set(vtype)
