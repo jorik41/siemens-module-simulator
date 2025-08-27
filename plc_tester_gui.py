@@ -243,12 +243,18 @@ class StepEditor(tk.Toplevel):
     """
 
     def __init__(
-        self, master: tk.Misc, step: TestStep | None = None, title: str = "Step"
+        self,
+        master: tk.Misc,
+        step: TestStep | None = None,
+        title: str = "Step",
+        db_layout: Dict[str, Any] | None = None,
     ) -> None:
         super().__init__(master)
         self.title(title)
         self.resizable(False, False)
         self.result: TestStep | None = None
+
+        self.db_layout = db_layout or {}
 
         self.description_var = tk.StringVar()
         self.db_var = tk.StringVar()
@@ -287,42 +293,85 @@ class StepEditor(tk.Toplevel):
         frm = ttk.Frame(self)
         frm.pack(padx=10, pady=10)
 
-        ttk.Label(frm, text="Description").grid(row=0, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.description_var, width=40).grid(row=0, column=1)
+        row = 0
+        ttk.Label(frm, text="Description").grid(row=row, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.description_var, width=40).grid(row=row, column=1)
+        row += 1
 
-        ttk.Label(frm, text="Area").grid(row=1, column=0, sticky="w")
+        ttk.Label(frm, text="Area").grid(row=row, column=0, sticky="w")
         ttk.OptionMenu(frm, self.area_var, self.area_var.get(), "DB", "M").grid(
-            row=1, column=1, sticky="w"
+            row=row, column=1, sticky="w"
         )
+        row += 1
 
-        ttk.Label(frm, text="DB number").grid(row=2, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=2, column=1, sticky="w")
+        if self.db_layout:
+            ttk.Label(frm, text="DB").grid(row=row, column=0, sticky="w")
+            self.db_combo = ttk.Combobox(
+                frm, values=self._build_db_list(), width=30
+            )
+            self.db_combo.grid(row=row, column=1, sticky="w")
+            self.db_combo.bind("<<ComboboxSelected>>", self._on_db_selected)
+            row += 1
 
-        ttk.Label(frm, text="Start address(es)").grid(row=3, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.start_var, width=20).grid(row=3, column=1, sticky="w")
+            ttk.Label(frm, text="Variable").grid(row=row, column=0, sticky="w")
+            self.var_combo = ttk.Combobox(frm, values=[], width=30)
+            self.var_combo.grid(row=row, column=1, sticky="w")
+            self.var_combo.bind("<<ComboboxSelected>>", self._on_var_selected)
+            row += 1
+        else:
+            self.db_combo = None
+            self.var_combo = None
 
-        ttk.Label(frm, text="Data type(s)").grid(row=4, column=0, sticky="w")
-        ttk.Entry(frm, textvariable=self.type_var, width=20).grid(row=4, column=1, sticky="w")
+        if self.db_layout and step and self.db_combo:
+            db_key = str(self.db_var.get())
+            if db_key in self.db_layout:
+                self.db_combo.set(
+                    f"{db_key}:{self.db_layout[db_key].get('name', '')}"
+                )
+                self._on_db_selected(None)
+                start_val = str(self.start_var.get())
+                for var in self.db_layout[db_key].get("variables", []):
+                    offset = var.get("offset", 0)
+                    bit = var.get("bit")
+                    s = f"{offset}.{bit}" if bit is not None else str(offset)
+                    if s == start_val:
+                        self.var_combo.set(var.get("name", ""))
+                        break
 
-        ttk.Label(frm, text="Write values (comma)").grid(row=5, column=0, sticky="w")
+        ttk.Label(frm, text="DB number").grid(row=row, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.db_var, width=10).grid(row=row, column=1, sticky="w")
+        row += 1
+
+        ttk.Label(frm, text="Start address(es)").grid(row=row, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.start_var, width=20).grid(row=row, column=1, sticky="w")
+        row += 1
+
+        ttk.Label(frm, text="Data type(s)").grid(row=row, column=0, sticky="w")
+        ttk.Entry(frm, textvariable=self.type_var, width=20).grid(row=row, column=1, sticky="w")
+        row += 1
+
+        ttk.Label(frm, text="Write values (comma)").grid(row=row, column=0, sticky="w")
         ttk.Entry(frm, textvariable=self.write_var, width=30).grid(
-            row=5, column=1, sticky="w"
+            row=row, column=1, sticky="w"
         )
+        row += 1
 
         ttk.Label(frm, text="Expected values (comma)").grid(
-            row=6, column=0, sticky="w"
+            row=row, column=0, sticky="w"
         )
         ttk.Entry(frm, textvariable=self.expected_var, width=30).grid(
-            row=6, column=1, sticky="w"
+            row=row, column=1, sticky="w"
         )
+        row += 1
 
-        ttk.Label(frm, text="Delay ms").grid(row=7, column=0, sticky="w")
+        ttk.Label(frm, text="Delay ms").grid(row=row, column=0, sticky="w")
         ttk.Entry(frm, textvariable=self.delay_var, width=10).grid(
-            row=7, column=1, sticky="w"
+            row=row, column=1, sticky="w"
         )
+        row += 1
 
         btn_frm = ttk.Frame(frm)
-        btn_frm.grid(row=8, column=0, columnspan=2, pady=(10, 0))
+        btn_frm.grid(row=row, column=0, columnspan=2, pady=(10, 0))
         ttk.Button(btn_frm, text="OK", command=self._on_ok).grid(row=0, column=0, padx=5)
         ttk.Button(btn_frm, text="Cancel", command=self.destroy).grid(row=0, column=1, padx=5)
 
@@ -330,6 +379,38 @@ class StepEditor(tk.Toplevel):
         self.wait_visibility()
         self.transient(master)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _build_db_list(self) -> List[str]:
+        return sorted(
+            f"{db}:{info.get('name', '')}" for db, info in self.db_layout.items()
+        )
+
+    def _build_var_list(self, db_str: str) -> List[str]:
+        info = self.db_layout.get(db_str, {})
+        return [var.get("name", "") for var in info.get("variables", [])]
+
+    def _on_db_selected(self, _event: tk.Event) -> None:
+        sel = self.db_combo.get()
+        db_str = sel.split(":", 1)[0]
+        self.db_var.set(db_str)
+        self.var_combo["values"] = self._build_var_list(db_str)
+        self.var_combo.set("")
+
+    def _on_var_selected(self, _event: tk.Event) -> None:
+        sel_db = self.db_var.get()
+        var_name = self.var_combo.get()
+        info = self.db_layout.get(sel_db, {})
+        for var in info.get("variables", []):
+            if var.get("name") == var_name:
+                offset = var.get("offset", 0)
+                bit = var.get("bit")
+                self.start_var.set(
+                    f"{offset}.{bit}" if bit is not None else str(offset)
+                )
+                vtype = var.get("type")
+                if vtype:
+                    self.type_var.set(vtype)
+                break
 
     def _on_ok(self) -> None:
         try:
@@ -685,6 +766,7 @@ class PLCTestGUI:
         self.module_results: Dict[ModulePlan, bool] = {}
         self.test_results: Dict[TestCase, bool] = {}
         self.step_results: Dict[TestStep, bool] = {}
+        self.db_layout: Dict[str, Any] = {}
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
@@ -753,6 +835,9 @@ class PLCTestGUI:
         ttk.Button(run_frm, text="Run Selected Test", command=self.run_selected_test).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Load Plan", command=self.load_plan).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frm, text="Save Plan", command=self.save_plan).pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frm, text="Load DB Layout", command=self.load_db_layout).pack(
+            side=tk.LEFT, padx=5
+        )
         ttk.Button(run_frm, text="JSON Editor", command=self.open_json_editor).pack(
             side=tk.LEFT, padx=5
         )
@@ -997,7 +1082,7 @@ class PLCTestGUI:
         if not test:
             messagebox.showwarning("No test", "Select a test first.")
             return
-        editor = StepEditor(self.root)
+        editor = StepEditor(self.root, db_layout=self.db_layout)
         self.root.wait_window(editor)
         step = editor.result
         if step:
@@ -1013,7 +1098,7 @@ class PLCTestGUI:
             messagebox.showwarning("No selection", "Select a step to edit.")
             return
         step = test.steps[idx[0]]
-        editor = StepEditor(self.root, step=step, title="Edit Step")
+        editor = StepEditor(self.root, step=step, title="Edit Step", db_layout=self.db_layout)
         self.root.wait_window(editor)
         new_step = editor.result
         if new_step:
@@ -1085,6 +1170,15 @@ class PLCTestGUI:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.plan.to_dict(), f, indent=2)
         self.log_msg(f"Saved plan to {path}")
+
+    def load_db_layout(self) -> None:
+        """Load a JSON file describing PLC DB layouts."""
+        path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
+        if not path:
+            return
+        with open(path, "r", encoding="utf-8") as f:
+            self.db_layout = json.load(f)
+        self.log_msg(f"Loaded DB layout from {path}")
 
     # ------------------------------------------------------------------ Connection
     def connect_plc(self) -> None:
