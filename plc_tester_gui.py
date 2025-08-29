@@ -318,6 +318,7 @@ class StepEditor(tk.Toplevel):
             self.var_combo = ttk.Combobox(frm, values=[], width=30)
             self.var_combo.grid(row=row, column=1, sticky="w")
             self.var_combo.bind("<<ComboboxSelected>>", self._on_var_selected)
+            self.start_var.trace_add("write", self._on_start_changed)
             row += 1
         else:
             self.db_combo = None
@@ -398,13 +399,34 @@ class StepEditor(tk.Toplevel):
         self.var_combo.set("")
 
     def _on_var_selected(self, _event: tk.Event) -> None:
+        """Update fields when a variable name is chosen."""
+
+        # Determine which DB the variable belongs to.  If a DB combobox is
+        # present, use its selection as the source of truth and update the
+        # accompanying entry variable so later validation succeeds.  Fallback to
+        # the DB entry variable directly if no combobox exists.
         sel_db = self.db_var.get()
+        if self.db_combo:
+            combo_val = self.db_combo.get()
+            if combo_val:
+                sel_db = combo_val.split(":", 1)[0]
+                self.db_var.set(sel_db)
+
+        # Fetch the DB information.  ``db_layout`` keys may be strings (common
+        # when loaded from JSON) or integers (when provided programmatically),
+        # so handle both forms.
+        info = self.db_layout.get(sel_db)
+        if info is None and sel_db.isdigit():
+            info = self.db_layout.get(int(sel_db), {})
+        else:
+            info = info or {}
+
         var_name = self.var_combo.get()
-        info = self.db_layout.get(sel_db, {})
         for var in info.get("variables", []):
             if var.get("name") == var_name:
                 offset = var.get("offset", 0)
                 bit = var.get("bit")
+                # Update the start address entry to the variable's address.
                 self.start_var.set(
                     f"{offset}.{bit}" if bit is not None else str(offset)
                 )
@@ -412,6 +434,60 @@ class StepEditor(tk.Toplevel):
                 if vtype:
                     self.type_var.set(vtype)
                 break
+
+    def _on_start_changed(self, *_args: object) -> None:
+        """Update variable combobox when a start address is entered."""
+
+        if not self.db_layout or not self.var_combo:
+            return
+
+        val = self.start_var.get().strip()
+        # Only attempt lookup when a single address is provided.
+        if not val or "," in val:
+            return
+
+        sel_db = self.db_var.get()
+        if self.db_combo:
+            combo_val = self.db_combo.get()
+            if combo_val:
+                sel_db = combo_val.split(":", 1)[0]
+                self.db_var.set(sel_db)
+
+        info = self.db_layout.get(sel_db)
+        if info is None and sel_db.isdigit():
+            info = self.db_layout.get(int(sel_db), {})
+        else:
+            info = info or {}
+
+        # Parse the address into offset/bit components.
+        try:
+            if "." in val:
+                byte_str, bit_str = val.split(".")
+                target_offset = int(byte_str)
+                target_bit = int(bit_str)
+            else:
+                target_offset = int(val)
+                target_bit = None
+        except ValueError:
+            self.var_combo.set("")
+            return
+
+        matched = False
+        for var in info.get("variables", []):
+            offset = int(var.get("offset", 0))
+            bit = var.get("bit")
+            if offset == target_offset and (
+                (bit is None and target_bit is None) or bit == target_bit
+            ):
+                self.var_combo.set(var.get("name", ""))
+                vtype = var.get("type")
+                if vtype:
+                    self.type_var.set(vtype)
+                matched = True
+                break
+
+        if not matched:
+            self.var_combo.set("")
 
     def _on_ok(self) -> None:
         try:
