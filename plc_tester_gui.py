@@ -263,7 +263,7 @@ class StepEditor(tk.Toplevel):
         self.type_var = tk.StringVar()
         self.write_var = tk.StringVar()
         self.expected_var = tk.StringVar()
-        self.delay_var = tk.StringVar()
+        self.delay_var = tk.StringVar(value="10")
         self.area_var = tk.StringVar(value="DB")
 
         if step:
@@ -506,7 +506,7 @@ class PlanJsonEditor(tk.Toplevel):
         '  "data_type": "INT",\n'
         '  "write": 0,\n'
         '  "expected": 0,\n'
-        '  "delay_ms": 0\n}'
+        '  "delay_ms": 10\n}'
     )
 
     KEYWORDS = [

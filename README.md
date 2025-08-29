@@ -48,6 +48,6 @@ file dialogs.
 - Multiple start bytes can be entered separated by commas (e.g. `0,4,8`).
 - Provide matching data types separated by commas (e.g. `INT,REAL`). Use `byte.bit` for BOOL addresses.
 - Enter corresponding write or expected values separated by commas (e.g. `5,3.14`).
-- An optional delay (milliseconds) can be specified to pause before executing the step's operations.
+- An optional delay (milliseconds) can be specified to pause before executing the step's operations (defaults to 10 ms).
 - Choose the memory area (DB or M); DB number is ignored when using M.
 
