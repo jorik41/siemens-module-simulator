@@ -16,6 +16,7 @@ This repository contains a simple Python GUI application for creating and execut
 - Detailed failure log identifying which step failed and why
 - Built-in JSON editor with live syntax checking, auto-completion, and templates
 - Edit JSON for individual modules, tests, or steps with automatic plan updates
+- Duplicate modules, tests, and steps and reorder them via drag-and-drop
 
 ## Usage
 

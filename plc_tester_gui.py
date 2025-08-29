@@ -5,6 +5,7 @@ A simple GUI to create and run PLC test plans using Snap7.
 import json
 import time
 import re
+import copy
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Union, Callable
 
@@ -800,7 +801,10 @@ class PLCTestGUI:
         self.module_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.module_list.bind("<<ListboxSelect>>", lambda e: self.refresh_tests())
         self._disallow_space_select(self.module_list)
+        self._make_draggable(self.module_list, self._move_module)
         ttk.Button(module_frm, text="Add", command=self.add_module).pack(fill=tk.X)
+        ttk.Button(module_frm, text="Copy", command=self.copy_module).pack(fill=tk.X)
+        ttk.Button(module_frm, text="Edit", command=self.edit_module).pack(fill=tk.X)
         ttk.Button(module_frm, text="Remove", command=self.remove_module).pack(fill=tk.X)
         ttk.Button(module_frm, text="Edit JSON", command=self.edit_module_json).pack(fill=tk.X)
 
@@ -811,7 +815,10 @@ class PLCTestGUI:
         self.test_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.test_list.bind("<<ListboxSelect>>", lambda e: self.refresh_steps())
         self._disallow_space_select(self.test_list)
+        self._make_draggable(self.test_list, self._move_test)
         ttk.Button(test_frm, text="Add", command=self.add_test).pack(fill=tk.X)
+        ttk.Button(test_frm, text="Copy", command=self.copy_test).pack(fill=tk.X)
+        ttk.Button(test_frm, text="Edit", command=self.edit_test).pack(fill=tk.X)
         ttk.Button(test_frm, text="Remove", command=self.remove_test).pack(fill=tk.X)
         ttk.Button(test_frm, text="Edit JSON", command=self.edit_test_json).pack(fill=tk.X)
 
@@ -823,7 +830,9 @@ class PLCTestGUI:
         )
         self.step_list.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._disallow_space_select(self.step_list)
+        self._make_draggable(self.step_list, self._move_step)
         ttk.Button(step_frm, text="Add", command=self.add_step).pack(fill=tk.X)
+        ttk.Button(step_frm, text="Copy", command=self.copy_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Edit", command=self.edit_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Remove", command=self.remove_step).pack(fill=tk.X)
         ttk.Button(step_frm, text="Edit JSON", command=self.edit_step_json).pack(fill=tk.X)
@@ -878,6 +887,26 @@ class PLCTestGUI:
 
         listbox.bind("<Button-1>", handler)
 
+    def _make_draggable(
+        self, listbox: tk.Listbox, mover: Callable[[int, int], None]
+    ) -> None:
+        """Enable drag-and-drop reordering for ``listbox``."""
+
+        def on_start(event: tk.Event) -> None:
+            listbox._drag_start = listbox.nearest(event.y)
+
+        def on_drop(event: tk.Event) -> None:
+            start = getattr(listbox, "_drag_start", None)
+            if start is None:
+                return
+            end = listbox.nearest(event.y)
+            if end != start:
+                mover(start, end)
+            listbox._drag_start = None
+
+        listbox.bind("<ButtonPress-1>", on_start, add="+")
+        listbox.bind("<ButtonRelease-1>", on_drop, add="+")
+
     def current_module(self) -> ModulePlan | None:
         idx = self.module_list.curselection()
         if not idx:
@@ -892,6 +921,33 @@ class PLCTestGUI:
         if not idx:
             return None
         return module.tests[idx[0]]
+
+    def _move_module(self, from_idx: int, to_idx: int) -> None:
+        self.plan.modules.insert(to_idx, self.plan.modules.pop(from_idx))
+        self.refresh_modules()
+        self.module_list.selection_clear(0, tk.END)
+        self.module_list.selection_set(to_idx)
+        self._sync_json_editor()
+
+    def _move_test(self, from_idx: int, to_idx: int) -> None:
+        module = self.current_module()
+        if not module:
+            return
+        module.tests.insert(to_idx, module.tests.pop(from_idx))
+        self.refresh_tests()
+        self.test_list.selection_clear(0, tk.END)
+        self.test_list.selection_set(to_idx)
+        self._sync_json_editor()
+
+    def _move_step(self, from_idx: int, to_idx: int) -> None:
+        test = self.current_test()
+        if not test:
+            return
+        test.steps.insert(to_idx, test.steps.pop(from_idx))
+        self.refresh_steps()
+        self.step_list.selection_clear(0, tk.END)
+        self.step_list.selection_set(to_idx)
+        self._sync_json_editor()
 
     def refresh_modules(self) -> None:
         self.module_list.delete(0, tk.END)
@@ -996,6 +1052,30 @@ class PLCTestGUI:
             self.refresh_modules()
             self._sync_json_editor()
 
+    def copy_module(self) -> None:
+        module = self.current_module()
+        idx = self.module_list.curselection()
+        if not module or not idx:
+            messagebox.showwarning("No selection", "Select a module to copy.")
+            return
+        new_module = copy.deepcopy(module)
+        new_module.name += " Copy"
+        self.plan.modules.insert(idx[0] + 1, new_module)
+        self.refresh_modules()
+        self.module_list.selection_set(idx[0] + 1)
+        self._sync_json_editor()
+
+    def edit_module(self) -> None:
+        module = self.current_module()
+        if not module:
+            messagebox.showwarning("No selection", "Select a module to edit.")
+            return
+        name = simpledialog.askstring("Module", "Module name:", initialvalue=module.name)
+        if name:
+            module.name = name
+            self.refresh_modules()
+            self._sync_json_editor()
+
     def remove_module(self) -> None:
         module = self.current_module()
         if not module:
@@ -1040,6 +1120,31 @@ class PLCTestGUI:
         name = simpledialog.askstring("Test", "Test name:")
         if name:
             module.tests.append(TestCase(name=name))
+            self.refresh_tests()
+            self._sync_json_editor()
+
+    def copy_test(self) -> None:
+        module = self.current_module()
+        idx = self.test_list.curselection()
+        if not (module and idx):
+            messagebox.showwarning("No selection", "Select a test to copy.")
+            return
+        test = module.tests[idx[0]]
+        new_test = copy.deepcopy(test)
+        new_test.name += " Copy"
+        module.tests.insert(idx[0] + 1, new_test)
+        self.refresh_tests()
+        self.test_list.selection_set(idx[0] + 1)
+        self._sync_json_editor()
+
+    def edit_test(self) -> None:
+        test = self.current_test()
+        if not test:
+            messagebox.showwarning("No selection", "Select a test to edit.")
+            return
+        name = simpledialog.askstring("Test", "Test name:", initialvalue=test.name)
+        if name:
+            test.name = name
             self.refresh_tests()
             self._sync_json_editor()
 
@@ -1090,6 +1195,20 @@ class PLCTestGUI:
             self.refresh_steps()
             self._sync_json_editor()
             self.suggest_next_step(step)
+
+    def copy_step(self) -> None:
+        test = self.current_test()
+        idx = self.step_list.curselection()
+        if not (test and idx):
+            messagebox.showwarning("No selection", "Select a step to copy.")
+            return
+        step = test.steps[idx[0]]
+        new_step = copy.deepcopy(step)
+        new_step.description += " Copy"
+        test.steps.insert(idx[0] + 1, new_step)
+        self.refresh_steps()
+        self.step_list.selection_set(idx[0] + 1)
+        self._sync_json_editor()
 
     def edit_step(self) -> None:
         test = self.current_test()
